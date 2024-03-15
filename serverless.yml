@@ -1,0 +1,68 @@
+app: convem-transaction-serverless
+service: convem-transaction-serverless
+useDotenv: true
+
+plugins:
+  - serverless-esbuild
+  - serverless-dotenv-plugin
+
+custom:
+  tableName: "transactions-table-${sls:stage}"
+  esbuild:
+    bundle: true
+    minify: false
+
+provider:
+  name: aws
+  region: us-east-1
+  runtime: nodejs20.x
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - Fn::GetAtt: [TransactionsTable, Arn]
+  environment:
+    TRANSACTIONS_TABLE: ${self:custom.tableName}
+
+
+functions:
+  consumer:
+    handler: consumer.consumer
+    events:
+      - sqs: ${env:AWS_SQS_ARN}
+  createTransaction:
+    handler: handler.handler
+    events:
+      - http:
+          path: /transactions
+          method: POST      
+  getTransactions:
+    handler: handler.handler
+    events:
+      - http:
+          path: /transactions
+          method: GET
+
+resources:
+  Resources:
+    TransactionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: idempotencyId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: idempotencyId
+            KeyType: HASH
+        ProvisionedThroughput:   # Adicione esta seção
+          ReadCapacityUnits: 5   # Capacidade de leitura por segundo
+          WriteCapacityUnits: 5  # Capacidade de gravação por segundo
+        TableName: ${self:custom.tableName}
